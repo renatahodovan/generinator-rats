@@ -1,0 +1,6 @@
+__pycache__
+build
+dist
+generinator_rats.egg-info
+.DS_Store
+.idea
