@@ -16,7 +16,6 @@ with open(join(dirname(__file__), 'generinator_rats/VERSION'), 'rb') as f:
 with open(join(dirname(__file__), 'generinator_rats/resources/dependencies.json'), 'r') as f:
     deps_json = json.load(f)
     runtime_req = deps_json['runtime_req']
-    runtime_url = deps_json['runtime_url']
 
 
 setup(
@@ -30,7 +29,6 @@ setup(
     description='Generinator: Random Attributes, Tags & Style',
     long_description=open('README.md').read(),
     install_requires=[runtime_req, 'chardet', 'pymongo'],
-    dependency_links=[runtime_url],
     zip_safe=False,
     include_package_data=True,
     entry_points={

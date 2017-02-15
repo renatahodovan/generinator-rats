@@ -16,17 +16,13 @@ Random web content (HTML, CSS, SVG) generator for
 
 ## Install
 
-Clone the project and run setuptools:
+The quick way:
+
+    pip install generinator-rats
+
+Alternatively, by cloning the project and running setuptools:
 
     python setup.py install
-
-(Quick pip install from PyPi will be available when ANTLR 4.5.4 is officially
-released containing important fixes to the Python target and runtime.)
-
-Once the project is installed, a helper script becomes available that downloads
-the right version of the ANTLR v4 tool jar.
-
-    generinator-rats-install-antlr4
 
 
 ## Usage
