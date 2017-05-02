@@ -7,8 +7,8 @@
 
 import pkgutil
 
-from os.path import expanduser, join
+from antlerinator import antlr_jar_path
 
 
 __version__ = pkgutil.get_data(__package__, 'VERSION').decode('ascii').strip()
-antlr_default_path = join(expanduser('~'), '.generinator_rats', 'antlr4.jar')
+antlr_default_path = antlr_jar_path

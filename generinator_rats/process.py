@@ -5,6 +5,7 @@
 # This file may not be copied, modified, or distributed except
 # according to those terms.
 
+import antlerinator
 import chardet
 import logging
 import signal
@@ -271,8 +272,11 @@ def execute():
     args = parser.parse_args()
 
     logger.setLevel(args.log_level)
-    makedirs(args.out, exist_ok=True)
 
+    if args.antlr == antlr_default_path:
+        antlerinator.install(lazy=True)
+
+    makedirs(args.out, exist_ok=True)
     configs = prepare_parsing(args.antlr, args.out)
 
     for test in args.input:
