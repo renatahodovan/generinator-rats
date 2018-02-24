@@ -1,4 +1,4 @@
-# Copyright (c) 2016 Renata Hodovan, Akos Kiss.
+# Copyright (c) 2016-2018 Renata Hodovan, Akos Kiss.
 #
 # Licensed under the BSD 3-Clause License
 # <LICENSE.rst or https://opensource.org/licenses/BSD-3-Clause>.
@@ -15,8 +15,10 @@ from antlr4 import *
 from argparse import ArgumentParser
 from functools import wraps
 from glob import glob
-from os import getcwd, makedirs, listdir
-from os.path import exists, isdir, join, split, splitext
+from multiprocessing import Pool
+from os import cpu_count, getcwd, makedirs
+from os.path import isfile, join, split, splitext
+from pathlib import Path
 from pkgutil import get_data
 from pymongo import MongoClient
 from subprocess import Popen, PIPE, STDOUT
@@ -69,7 +71,43 @@ def prepare_parsing(antlr, work_dir):
     css_lexer, css_parser, css_listener = build_grammars('css', ['css3.g4'])
     logger.debug('Parser grammars are processed...')
 
-    class HTMLListener(html_listener):
+    # This dictionary will be used as the parameter of the input processing.
+    configs = dict(
+        html=dict(lexer=html_lexer, parser=html_parser, listener=html_listener, start_rule='htmlDocument'),
+        css=dict(lexer=css_lexer, parser=css_parser, listener=css_listener, start_rule='stylesheet')
+    )
+    configs['htm'] = configs['xhtml'] = configs['svg'] = configs['html']
+    return configs
+
+
+class TimeoutError(Exception):
+    pass
+
+
+def timeout(seconds=10):
+    def decorator(func):
+        def _handle_timeout(signum, frame):
+            raise TimeoutError()
+
+        def wrapper(*args, **kwargs):
+            signal.signal(signal.SIGALRM, _handle_timeout)
+            signal.alarm(seconds)
+            result = None
+            try:
+                result = func(*args, **kwargs)
+            finally:
+                signal.alarm(0)
+            return result
+
+        return wraps(func)(wrapper)
+
+    return decorator
+
+
+def update_listeners(configs):
+
+    class HTMLListener(configs['html']['listener']):
+
         def __init__(self, uri, parser, src):
             # Save uri because it will be needed to pass when processing style tags.
             self.uri = uri
@@ -118,7 +156,7 @@ def prepare_parsing(antlr, work_dir):
                     self.process_style(ctx.children[1].symbol.text, 'stylesheet')
 
         def process_style(self, src, rule):
-            target_parser = css_parser(CommonTokenStream(css_lexer(InputStream(src))))
+            target_parser = configs['css']['parser'](CommonTokenStream(configs['css']['lexer'](InputStream(src))))
             parser_listener = CSSListener(self.uri, target_parser, src)
             target_parser.addParseListener(parser_listener)
 
@@ -137,6 +175,34 @@ def prepare_parsing(antlr, work_dir):
                 self.db_html.update_one({'type': 'attr', 'name': attr_name},
                                         {'$addToSet': {'value': {'$each': list(self.attributes[attr_name])}}},
                                         upsert=True)
+
+    class CSSListener(configs['css']['listener']):
+        def __init__(self, uri, parser, src):
+            self.db_css = MongoClient(uri).get_default_database().generinator_rats_css
+            self.parser = parser
+            self.src = src
+            self.css = dict()
+
+        def exitEveryRule(self, ctx:ParserRuleContext):
+            rule_name = self.parser.ruleNames[ctx.getRuleIndex()]
+
+            if rule_name == 'prop':
+                prop_name = ctx.identifier().children[0].symbol.text
+                if prop_name not in self.css:
+                    self.css[prop_name] = set()
+
+                if ctx.values():
+                    # TODO: this could be further refined:
+                    # More detailed description of the value can improve
+                    # the effectiveness of the fuzzer.
+                    start, stop = boundaries(ctx.values())
+                    self.css[prop_name].add(self.src[start:stop])
+
+        def exitStylesheet(self, ctx):
+            for prop in self.css:
+                self.db_css.update_one({'prop': prop},
+                                       {'$addToSet': {'value': {'$each': list(self.css[prop])}}},
+                                       upsert=True)
 
     def boundaries(node):
         if isinstance(node, tree.Tree.TerminalNodeImpl):
@@ -171,93 +237,43 @@ def prepare_parsing(antlr, work_dir):
 
         return start, stop
 
-    class CSSListener(css_listener):
-        def __init__(self, uri, parser, src):
-            self.db_css = MongoClient(uri).get_default_database().generinator_rats_css
-            self.parser = parser
-            self.src = src
-            self.css = dict()
-
-        def exitEveryRule(self, ctx:ParserRuleContext):
-            rule_name = self.parser.ruleNames[ctx.getRuleIndex()]
-
-            if rule_name == 'prop':
-                prop_name = ctx.identifier().children[0].symbol.text
-                if prop_name not in self.css:
-                    self.css[prop_name] = set()
-
-                if ctx.values():
-                    # TODO: this could be further refined:
-                    # More detailed description of the value can improve
-                    # the effectiveness of the fuzzer.
-                    start, stop = boundaries(ctx.values())
-                    self.css[prop_name].add(self.src[start:stop])
-
-        def exitStylesheet(self, ctx):
-            for prop in self.css:
-                self.db_css.update_one({'prop': prop},
-                                       {'$addToSet': {'value': {'$each': list(self.css[prop])}}},
-                                       upsert=True)
-
-    # This dictionary will be used as the parameter of the input processing.
-    return dict(
-        html=dict(lexer=html_lexer, parser=html_parser, listener=HTMLListener, start_rule='htmlDocument'),
-        css=dict(lexer=css_lexer, parser=css_parser, listener=CSSListener, start_rule='stylesheet')
-    )
-
-
-class TimeoutError(Exception):
-    pass
-
-
-def timeout(seconds=10):
-    def decorator(func):
-        def _handle_timeout(signum, frame):
-            raise TimeoutError()
-
-        def wrapper(*args, **kwargs):
-            signal.signal(signal.SIGALRM, _handle_timeout)
-            signal.alarm(seconds)
-            result = None
-            try:
-                result = func(*args, **kwargs)
-            finally:
-                signal.alarm(0)
-            return result
-
-        return wraps(func)(wrapper)
-
-    return decorator
+    configs['html']['listener'] = HTMLListener
+    configs['css']['listener'] = CSSListener
 
 
 # Making sure that we don't get stuck into the parsing of a large test case.
 @timeout(60)
-def process_file(uri, path, lexer, parser, listener, start_rule):
+def process_file(uri, path, configs, ext):
     logger.info(path)
     try:
         with open(path, 'rb') as f:
             byts = f.read()
             enc = chardet.detect(byts)['encoding'] or 'utf-8'
             src = byts.decode(enc, errors='ignore')
-        target_parser = parser(CommonTokenStream(lexer(InputStream(src))))
-        parser_listener = listener(uri, target_parser, src)
+        target_parser = configs[ext]['parser'](CommonTokenStream(configs[ext]['lexer'](InputStream(src))))
+        parser_listener = configs[ext]['listener'](uri, target_parser, src)
         target_parser.addParseListener(parser_listener)
 
-        getattr(target_parser, start_rule)()
+        getattr(target_parser, configs[ext]['start_rule'])()
     except Exception as e:
         logger.warning(e)
 
 
-def process(uri, path, configs):
-    if isdir(path):
-        for fn in listdir(path):
-            process(uri, join(path, fn), configs)
-    else:
-        ext = splitext(path)[1][1:]
-        if ext in ['html', 'svg', 'xhtml', 'htm']:
-            process_file(uri, path, **configs['html'])
-        elif ext in ['css']:
-            process_file(uri, path, **configs['css'])
+def process(uri, path, configs, ext):
+    update_listeners(configs)
+    process_file(uri, path, configs, ext)
+
+
+def iterate_tests(uri, patterns, configs):
+    for pattern in patterns:
+        path = Path(pattern).expanduser()
+        anchor, pattern = ('.', pattern) if not path.anchor else (path.anchor, str(path.relative_to(path.anchor)))
+
+        for path in Path(anchor).glob(pattern):
+            path = str(path)
+            ext = splitext(path)[1][1:]
+            if isfile(path) and ext in configs:
+                yield (uri, path, configs, ext)
 
 
 def execute():
@@ -266,6 +282,8 @@ def execute():
     parser.add_argument('--antlr', metavar='FILE', default=antlr_default_path, help='path of the antlr jar file (default: %(default)s)')
     parser.add_argument('-l', '--log-level', metavar='LEVEL', default=logging.INFO, help='set log level (default: INFO)')
     parser.add_argument('--uri', default='mongodb://localhost/fuzzinator', help='URI of the database to store gathered information (default: %(default)s)')
+    parser.add_argument('-j', '--jobs', default=cpu_count(), type=int, metavar='NUM',
+                        help='test parsing parallelization level (default: number of cpu cores (%(default)d))')
     parser.add_argument('-o', '--out', metavar='DIR', default=getcwd(), help='temporary working directory (default: .)')
     parser.add_argument('--version', action='version', version='%(prog)s {version}'.format(version=__version__))
     args = parser.parse_args()
@@ -278,11 +296,13 @@ def execute():
     makedirs(args.out, exist_ok=True)
     configs = prepare_parsing(args.antlr, args.out)
 
-    for test in args.input:
-        if not exists(test):
-            logger.warning('{test} does not exists.'.format(test=test))
-        else:
-            process(args.uri, test, configs)
+    if args.jobs > 1:
+        with Pool(args.jobs) as pool:
+            pool.starmap(process, iterate_tests(args.uri, args.input, configs))
+    else:
+        update_listeners(configs)
+        for create_args in iterate_tests(args.uri, args.input, configs):
+            process_file(*create_args)
 
 
 if __name__ == '__main__':
