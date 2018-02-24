@@ -66,8 +66,7 @@ def prepare_parsing(antlr, work_dir):
             sys.exit(1)
 
     html_lexer, html_parser, html_listener = build_grammars('html', ['HTMLLexer.g4', 'HTMLParser.g4'])
-    # TODO: it would be nice if someone would write a decent CSS grammar for ANTLR4.
-    css_lexer, css_parser, css_listener = build_grammars('css', ['ScssLexer.g4', 'ScssParser.g4'])
+    css_lexer, css_parser, css_listener = build_grammars('css', ['css3.g4'])
     logger.debug('Parser grammars are processed...')
 
     class HTMLListener(html_listener):
