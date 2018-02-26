@@ -7,10 +7,12 @@
 
 import logging
 import random
+import shutil
 import string
 
 from argparse import ArgumentParser
-from os import getcwd, makedirs
+from multiprocessing import Pool
+from os import cpu_count, getcwd, makedirs
 from os.path import join
 from pymongo import MongoClient
 
@@ -31,8 +33,12 @@ class Generator(object):
     max_text_len = 1000
     universal_selector_prob = 30
 
-    def __init__(self, uri, preload):
+    def __init__(self, uri='mongodb://localhost/fuzzinator', preload=True, start_tag='html', out=getcwd(), cleanup=False):
         self.preload = preload
+        self.start_tag = start_tag
+        self.out = out.format(uid=id(self))
+        self.cleanup = cleanup
+
         db = MongoClient(uri).get_default_database()
         if self.preload:
             self.tags = dict()
@@ -53,10 +59,26 @@ class Generator(object):
         self.tag_cnt = 0
         self.id_cnt = 0
 
-    def generate(self, tag_name):
+    def __enter__(self):
+        makedirs(self.out, exist_ok=True)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.out and self.cleanup:
+            shutil.rmtree(self.out)
+        return None
+
+    def __call__(self, *args, **kwargs):
         self.id_cnt = 0
         self.tag_cnt = 0
-        return self.generate_tag(tag_name)
+        return self.generate_tag(self.start_tag).encode('utf-8', errors='ignore')
+
+    def generate(self, index):
+        content = self(index=index)
+        test = join(self.out, '{idx}.{ext}'.format(idx=index, ext=self.start_tag))
+        with open(test, 'wb') as f:
+            f.write(content)
+        return test
 
     def random_css_prop(self):
         if self.preload:
@@ -161,13 +183,6 @@ class Generator(object):
                                                                         content=content)
 
 
-def generate(generator, n, out, tag):
-    makedirs(out, exist_ok=True)
-    for i in range(n):
-        with open(join(out, '{idx}.{ext}'.format(idx=i, ext=tag)), 'wb') as f:
-            f.write(generator.generate(tag).encode('utf-8', errors='ignore'))
-
-
 def execute():
     parser = ArgumentParser(description='Generinator:RATS Generator')
     parser.add_argument('-l', '--log-level', metavar='LEVEL', default=logging.INFO,
@@ -176,21 +191,26 @@ def execute():
                         help='number of tests to generate (default: %(default)s)')
     parser.add_argument('-o', '--out', metavar='DIR', default=getcwd(),
                         help='output directory of generated tests (default: .)')
-    parser.add_argument('--disable-preload', default=False, action='store_true',
+    parser.add_argument('--disable-preload', dest='preload', default=True, action='store_false',
                         help='disable optimization that loads the whole database to memory')
     parser.add_argument('--tag', choices=['html', 'svg'], default='html',
                         help='root tag name, also the extension of the generated files (default: %(default)s)')
     parser.add_argument('--uri', default='mongodb://localhost/fuzzinator',
                         help='URI of the database to generate from (default: %(default)s)')
+    parser.add_argument('-j', '--jobs', default=cpu_count(), type=int, metavar='NUM',
+                        help='parallelization level of test generation (default: number of cpu cores (%(default)d))')
     parser.add_argument('--version', action='version', version='%(prog)s {version}'.format(version=__version__))
     args = parser.parse_args()
 
     logger.setLevel(args.log_level)
 
-    generate(generator=Generator(uri=args.uri, preload=not args.disable_preload),
-             n=args.n,
-             out=args.out,
-             tag=args.tag)
+    with Generator(uri=args.uri, preload=args.preload, start_tag=args.tag, out=args.out) as generator:
+        if args.jobs > 1:
+            with Pool(args.jobs) as pool:
+                pool.starmap(generator.generate, [(i, ) for i in range(args.n)])
+        else:
+            for i in range(args.n):
+                generator.generate(i)
 
 
 if __name__ == '__main__':
