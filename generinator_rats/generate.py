@@ -95,7 +95,7 @@ class Generator(object):
     def generate_stylesheet(self):
         rule_sets = []
         for _ in range(random.randint(1, self.max_ruleset_cnt)):
-            rule_sets.append(',\n'.join([self.generate_property() for _ in random.randint(1, self.max_rule_per_ruleset)]))
+            rule_sets.append(',\n'.join([self.generate_property() for _ in range(random.randint(1, self.max_rule_per_ruleset))]))
         return '\n'.join(('{selector}\n{rule_set}'.format(selector=self.generate_selector(), rule_set=rule_set)) for rule_set in rule_sets)
 
     def generate_attributes(self, attr_names):
@@ -103,7 +103,7 @@ class Generator(object):
         self.id_cnt += 1
 
         for name in attr_names:
-            if name == 'style':
+            if name.lower() == 'style':
                 attr = '{name}="{value}"'.format(name=name, value=self.generate_style_attr())
             else:
                 attr_values = self.attr_values(name)
@@ -138,7 +138,7 @@ class Generator(object):
         attr_str = self.generate_attributes(attributes)
 
         content = ''
-        if tag_name == 'style':
+        if tag_name.lower() == 'style':
             content = self.generate_stylesheet()
         elif tag['children']:
             children = []
