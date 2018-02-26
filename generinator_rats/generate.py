@@ -7,6 +7,7 @@
 
 import logging
 import random
+import string
 
 from argparse import ArgumentParser
 from os import getcwd, makedirs
@@ -27,6 +28,7 @@ class Generator(object):
     max_rule_per_ruleset = 10
     max_selector_cnt = 5
     max_tag_cnt = 2000
+    max_text_len = 1000
     universal_selector_prob = 30
 
     def __init__(self, uri, preload):
@@ -150,6 +152,9 @@ class Generator(object):
                     child = random.choice(tag['children'])
                     children.append(child)
             content = self.generate_content(children)
+
+        if random.choice([True, False]):
+            content += random.choice(string.ascii_letters) * random.randint(1, self.max_text_len)
 
         return '<{tag_name} {attributes}>{content}</{tag_name}>'.format(tag_name=tag_name,
                                                                         attributes=attr_str,
