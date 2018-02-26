@@ -1,4 +1,4 @@
-# Copyright (c) 2016 Renata Hodovan, Akos Kiss.
+# Copyright (c) 2016-2018 Renata Hodovan, Akos Kiss.
 #
 # Licensed under the BSD 3-Clause License
 # <LICENSE.rst or https://opensource.org/licenses/BSD-3-Clause>.
@@ -167,7 +167,7 @@ def execute():
     parser = ArgumentParser(description='Generinator:RATS Generator')
     parser.add_argument('-l', '--log-level', metavar='LEVEL', default=logging.INFO,
                         help='set log level (default: INFO)')
-    parser.add_argument('-n', metavar='NUM', default=100, type=int,
+    parser.add_argument('-n', metavar='NUM', default=1, type=int,
                         help='number of tests to generate (default: %(default)s)')
     parser.add_argument('-o', '--out', metavar='DIR', default=getcwd(),
                         help='output directory of generated tests (default: .)')
