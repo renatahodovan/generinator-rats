@@ -138,8 +138,11 @@ def update_listeners(configs):
                             self.attributes[attr_name] = set()
                         if attr.htmlAttributeValue():
                             attr_value = attr.htmlAttributeValue().children[0].symbol.text
-                            if attr_name == 'style':
-                                self.process_style(attr_value, 'prop')
+                            if (attr_value.startswith('"') and attr_value.endswith('"')) or \
+                               (attr_value.startswith("'") and attr_value.endswith("'")):
+                                attr_value = attr_value[1:-1]
+                            if attr_name.lower() == 'style':
+                                self.process_style(attr_value, 'declarationList')
                             else:
                                 self.attributes[attr_name].add(attr_value)
                         else:
@@ -186,16 +189,17 @@ def update_listeners(configs):
         def exitEveryRule(self, ctx:ParserRuleContext):
             rule_name = self.parser.ruleNames[ctx.getRuleIndex()]
 
-            if rule_name == 'prop':
-                prop_name = ctx.identifier().children[0].symbol.text
+            if rule_name == 'declaration' and ctx.property().ident() and ctx.property().ident().Ident():
+                prop_name = ctx.property().ident().Ident().symbol.text
                 if prop_name not in self.css:
                     self.css[prop_name] = set()
 
-                if ctx.values():
+                value = ctx.expr() if ctx.expr() else ctx.value()
+                if value:
                     # TODO: this could be further refined:
                     # More detailed description of the value can improve
                     # the effectiveness of the fuzzer.
-                    start, stop = boundaries(ctx.values())
+                    start, stop = boundaries(value)
                     self.css[prop_name].add(self.src[start:stop])
 
         def exitStylesheet(self, ctx):
