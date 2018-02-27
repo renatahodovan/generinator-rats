@@ -1,6 +1,7 @@
 __pycache__
+*.py[co]
 build
 dist
-generinator_rats.egg-info
+*.egg-info
 .DS_Store
 .idea

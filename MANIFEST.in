@@ -3,3 +3,5 @@ include LICENSE.rst
 include MANIFEST.in
 include generinator_rats/VERSION
 recursive-include generinator_rats/resources *
+global-exclude __pycache__
+global-exclude *.py[co]
