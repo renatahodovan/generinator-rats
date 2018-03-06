@@ -9,6 +9,7 @@ import logging
 import random
 import shutil
 import string
+import sys
 
 from argparse import ArgumentParser
 from multiprocessing import Pool
@@ -199,10 +200,13 @@ def execute():
                         help='URI of the database to generate from (default: %(default)s)')
     parser.add_argument('-j', '--jobs', default=cpu_count(), type=int, metavar='NUM',
                         help='parallelization level of test generation (default: number of cpu cores (%(default)d))')
+    parser.add_argument('--sys-recursion-limit', metavar='NUM', type=int, default=sys.getrecursionlimit(),
+                        help='override maximum depth of the Python interpreter stack (default: %(default)d)')
     parser.add_argument('--version', action='version', version='%(prog)s {version}'.format(version=__version__))
     args = parser.parse_args()
 
     logger.setLevel(args.log_level)
+    sys.setrecursionlimit(args.sys_recursion_limit)
 
     with Generator(uri=args.uri, preload=args.preload, start_tag=args.tag, out=args.out) as generator:
         if args.jobs > 1:

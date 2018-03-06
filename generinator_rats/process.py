@@ -289,10 +289,13 @@ def execute():
     parser.add_argument('-j', '--jobs', default=cpu_count(), type=int, metavar='NUM',
                         help='test parsing parallelization level (default: number of cpu cores (%(default)d))')
     parser.add_argument('-o', '--out', metavar='DIR', default=getcwd(), help='temporary working directory (default: .)')
+    parser.add_argument('--sys-recursion-limit', metavar='NUM', type=int, default=sys.getrecursionlimit(),
+                        help='override maximum depth of the Python interpreter stack (default: %(default)d)')
     parser.add_argument('--version', action='version', version='%(prog)s {version}'.format(version=__version__))
     args = parser.parse_args()
 
     logger.setLevel(args.log_level)
+    sys.setrecursionlimit(args.sys_recursion_limit)
 
     if args.antlr == antlr_default_path:
         antlerinator.install(lazy=True)
